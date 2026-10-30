@@ -1,0 +1,9 @@
+{
+  "cookie": "",
+  "pdir_fid": "",
+  "download_dir": "/tmp",
+  "page_size": 100,
+  "batch_size": 50,
+  "timeout_sec": 120,
+  "delete_after_download": true
+}
