@@ -4,4 +4,4 @@
 
 ## 用法
 
-./binary --config config.json
+./quark-sync-linux-amd64 --config config.json
