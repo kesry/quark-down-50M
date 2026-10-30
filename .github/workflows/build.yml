@@ -7,42 +7,90 @@ on:
         description: 'Go 版本'
         required: false
         default: '1.22'
+      build_linux_amd64:
+        description: '构建 linux/amd64'
+        type: boolean
+        default: true
+      build_linux_arm64:
+        description: '构建 linux/arm64'
+        type: boolean
+        default: true
+      build_linux_armv7:
+        description: '构建 linux/arm (GOARM=7)'
+        type: boolean
+        default: false
+      build_linux_armv6:
+        description: '构建 linux/arm (GOARM=6)'
+        type: boolean
+        default: false
+      build_darwin_amd64:
+        description: '构建 darwin/amd64 (Intel Mac)'
+        type: boolean
+        default: false
+      build_darwin_arm64:
+        description: '构建 darwin/arm64 (Apple Silicon)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
+  prepare:
+    name: Prepare matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+      any: ${{ steps.gen.outputs.any }}
+    steps:
+      - name: Generate matrix
+        id: gen
+        env:
+          B_LINUX_AMD64: ${{ inputs.build_linux_amd64 }}
+          B_LINUX_ARM64: ${{ inputs.build_linux_arm64 }}
+          B_LINUX_ARMV7: ${{ inputs.build_linux_armv7 }}
+          B_LINUX_ARMV6: ${{ inputs.build_linux_armv6 }}
+          B_DARWIN_AMD64: ${{ inputs.build_darwin_amd64 }}
+          B_DARWIN_ARM64: ${{ inputs.build_darwin_arm64 }}
+        run: |
+          set -euo pipefail
+          items="[]"
+          add() {
+            # $1=goos $2=goarch $3=goarm $4=suffix
+            items=$(jq -c \
+              --arg goos "$1" \
+              --arg goarch "$2" \
+              --arg goarm "$3" \
+              --arg suffix "$4" \
+              '. + [{"goos": $goos, "goarch": $goarch, "goarm": $goarm, "suffix": $suffix}]' \
+              <<< "$items")
+          }
+
+          [ "${B_LINUX_AMD64}" = "true" ] && add linux amd64 "" linux-amd64
+          [ "${B_LINUX_ARM64}" = "true" ] && add linux arm64 "" linux-arm64
+          [ "${B_LINUX_ARMV7}" = "true" ] && add linux arm "7" linux-armv7
+          [ "${B_LINUX_ARMV6}" = "true" ] && add linux arm "6" linux-armv6
+          [ "${B_DARWIN_AMD64}" = "true" ] && add darwin amd64 "" darwin-amd64
+          [ "${B_DARWIN_ARM64}" = "true" ] && add darwin arm64 "" darwin-arm64
+
+          echo "matrix={\"include\": ${items}}" >> "$GITHUB_OUTPUT"
+          if [ "$items" = "[]" ]; then
+            echo "any=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "生成的 matrix:"
+          echo "{\"include\": ${items}}" | jq .
+
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }}${{ matrix.goarm && format('/v{0}', matrix.goarm) || '' }})
+    needs: prepare
+    if: needs.prepare.outputs.any == 'true'
     runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # ---- Linux ----
-          - goos: linux
-            goarch: amd64
-            suffix: linux-amd64
-          - goos: linux
-            goarch: arm64
-            suffix: linux-arm64
-          - goos: linux
-            goarch: arm
-            goarm: "7"
-            suffix: linux-armv7
-          - goos: linux
-            goarch: arm
-            goarm: "6"
-            suffix: linux-armv6
-
-          # ---- macOS ----
-          - goos: darwin
-            goarch: amd64
-            suffix: darwin-amd64
-          - goos: darwin
-            goarch: arm64
-            suffix: darwin-arm64
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
 
     steps:
       - name: Checkout
@@ -68,6 +116,7 @@ jobs:
           GOARM: ${{ matrix.goarm }}
           CGO_ENABLED: "0"
         run: |
+          set -euo pipefail
           mkdir -p dist
           out="dist/quark-sync-${{ matrix.suffix }}"
           go build -trimpath -ldflags "-s -w" -o "$out" main.go
