@@ -10,3 +10,5 @@
 ## 使用方法
 
 把你要下的文件保存到配置文件监听的远程目录，然后启动后，自动下载
+
+cookie和远程目录id参考 [夸克](https://doc.oplist.org.cn/guide/drivers/quark)
