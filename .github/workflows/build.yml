@@ -1,0 +1,88 @@
+name: Build quark-sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      go_version:
+        description: 'Go 版本'
+        required: false
+        default: '1.22'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }}${{ matrix.goarm && format('/v{0}', matrix.goarm) || '' }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ---- Linux ----
+          - goos: linux
+            goarch: amd64
+            suffix: linux-amd64
+          - goos: linux
+            goarch: arm64
+            suffix: linux-arm64
+          - goos: linux
+            goarch: arm
+            goarm: "7"
+            suffix: linux-armv7
+          - goos: linux
+            goarch: arm
+            goarm: "6"
+            suffix: linux-armv6
+
+          # ---- Windows ----
+          - goos: windows
+            goarch: amd64
+            suffix: windows-amd64.exe
+
+          # ---- macOS ----
+          - goos: darwin
+            goarch: amd64
+            suffix: darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            suffix: darwin-arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go_version || '1.22' }}
+          cache: false
+
+      - name: Go mod init
+        run: |
+          if [ ! -f go.mod ]; then
+            go mod init quark-sync
+          fi
+          go mod tidy
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist
+          out="dist/quark-sync-${{ matrix.suffix }}"
+          go build -trimpath -ldflags "-s -w" -o "$out" main.go
+          file "$out" || true
+          ls -lh dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: quark-sync-${{ matrix.suffix }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
